@@ -88,6 +88,13 @@ main{max-width:640px;margin:0 auto;padding:8px 16px 0}
 .streak i{width:10px;height:10px;border-radius:50%;background:rgba(118,118,128,.25);display:inline-block}
 .streak i.on{background:var(--green)}
 
+/* Pull to refresh */
+#ptr{position:fixed;top:0;left:0;right:0;z-index:35;display:flex;justify-content:center;pointer-events:none}
+#ptr .dot{margin-top:calc(env(safe-area-inset-top) + 8px);width:34px;height:34px;border-radius:50%;background:var(--card);box-shadow:0 2px 10px rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;transform:translateY(-60px);transition:transform .15s}
+#ptr .dot svg{width:18px;height:18px;color:var(--blue)}
+#ptr.spin .dot svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.version{text-align:center;color:var(--muted2);font-size:12px;padding:8px 0 4px}
 /* Tab bar */
 nav{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--tab);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   border-top:.5px solid var(--line);padding:6px 0 calc(6px + env(safe-area-inset-bottom));display:flex}
@@ -151,6 +158,7 @@ h2.sec{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercas
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 5-7 4 4"/><path d="M3 21h18"/></svg>Verlauf</button>
 </nav>
 
+<div id="ptr"><div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg></div></div>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -318,6 +326,7 @@ const ILLU = (() => {
 /* ==========================================================
    DATEN
    ========================================================== */
+const APP_VERSION='1.2.0';
 const KEY='training.v1';
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const today=()=>new Date().toISOString().slice(0,10);
@@ -383,6 +392,7 @@ function render(){
   if(tab==='train') renderTrain();
   else if(tab==='exercises') renderExercises();
   else renderHistory();
+  view.insertAdjacentHTML('beforeend',`<div class="version">Version ${APP_VERSION} · Zum Aktualisieren nach unten ziehen</div>`);
 }
 
 /* ---------- TRAINING ---------- */
@@ -430,15 +440,15 @@ function renderTrain(){
     <p class="note" style="text-align:center">Eingaben werden automatisch zwischengespeichert.</p>`;
   view.innerHTML=h;
 
-  view.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{S.day=b.dataset.day;save();renderTrain();});
+  view.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{S.day=b.dataset.day;save();render();});
   view.querySelectorAll('.card[data-ex]').forEach(card=>{
     const e=S.exercises.find(x=>x.id===card.dataset.ex);
     const getEn=()=>{ if(!d.entries[e.id]) d.entries[e.id]={reps:Array(e.sets).fill(''),weight:e.weight}; return d.entries[e.id]; };
     card.querySelectorAll('input[data-i]').forEach(inp=>inp.oninput=()=>{ getEn().reps[+inp.dataset.i]=inp.value===''?'':Number(inp.value); save(); softUpdate(card,e); });
     card.querySelectorAll('button[data-step]').forEach(b=>b.onclick=()=>{ const en=getEn(); const i=+b.dataset.i; const cur=en.reps[i]===''?(b.dataset.step>0?e.reps-1:e.reps+1):Number(en.reps[i]); en.reps[i]=Math.max(0,cur+Number(b.dataset.step)); card.querySelector(`input[data-i="${i}"]`).value=en.reps[i]; save(); softUpdate(card,e); });
     card.querySelector('input[data-f=weight]').oninput=ev=>{ getEn().weight=ev.target.value===''?null:Number(ev.target.value); save(); };
-    card.querySelector('[data-act=all]').onclick=()=>{ const en=getEn(); en.reps=Array(e.sets).fill(e.reps); save(); renderTrain(); };
-    card.querySelector('[data-act=clear]').onclick=()=>{ delete d.entries[e.id]; save(); renderTrain(); };
+    card.querySelector('[data-act=all]').onclick=()=>{ const en=getEn(); en.reps=Array(e.sets).fill(e.reps); save(); render(); };
+    card.querySelector('[data-act=clear]').onclick=()=>{ delete d.entries[e.id]; save(); render(); };
     card.querySelector('[data-act=toggle]').onclick=()=>{ card.classList.remove('done'); card.querySelector('.illu').classList.toggle('hidden'); };
   });
   const fin=$('#finish'); if(fin) fin.onclick=finishWorkout;
@@ -474,7 +484,7 @@ function finishWorkout(){
   }
   h+=`</ul>${ups.length?`<p><b>Nächstes Mal mehr Gewicht bei:</b> ${ups.map(u=>esc(u.e.name)).join(', ')}</p>`:''}
      <button class="btn primary" id="closeSheet">Fertig</button>`;
-  sheet(h); $('#closeSheet').onclick=()=>{closeSheet();renderTrain();};
+  sheet(h); $('#closeSheet').onclick=()=>{closeSheet();render();};
 }
 
 /* ---------- ÜBUNGEN ---------- */
@@ -540,9 +550,9 @@ function editExercise(ex){
     e.weight=$('#fW').value===''?null:Number($('#fW').value); e.inc=Number($('#fInc').value)||0;
     if(isNew) S.exercises.push(e); else { const i=S.exercises.findIndex(x=>x.id===e.id); S.exercises[i]=e; }
     if(S.draft && S.draft.entries[e.id]) delete S.draft.entries[e.id];
-    save(); closeSheet(); renderExercises(); toast('Gespeichert');
+    save(); closeSheet(); render(); toast('Gespeichert');
   };
-  const del=$('#fDel'); if(del) del.onclick=()=>{ if(confirm(`„${e.name}“ inkl. Verlauf löschen?`)){ S.exercises=S.exercises.filter(x=>x.id!==e.id); save(); closeSheet(); renderExercises(); } };
+  const del=$('#fDel'); if(del) del.onclick=()=>{ if(confirm(`„${e.name}“ inkl. Verlauf löschen?`)){ S.exercises=S.exercises.filter(x=>x.id!==e.id); save(); closeSheet(); render(); } };
 }
 function sparkline(e){
   const pts=e.log.filter(l=>l.weight!=null).map(l=>l.weight); if(pts.length<2) return '';
@@ -569,7 +579,7 @@ function renderHistory(){
     if(!confirm('Einheit löschen? Das Gewicht der Übungen wird nicht zurückgesetzt, nur der Eintrag entfernt.')) return;
     const s=S.sessions.find(x=>x.id===id);
     for(const en of s.entries){ const e=S.exercises.find(x=>x.id===en.exId); if(e) e.log=e.log.filter(l=>!(l.date===s.date&&l.day===s.day&&l.reps.join()===en.reps.join())); }
-    S.sessions=S.sessions.filter(x=>x.id!==id); save(); renderHistory();
+    S.sessions=S.sessions.filter(x=>x.id!==id); save(); render();
   });
 }
 
@@ -578,6 +588,34 @@ function sheet(html){ closeSheet(); const bg=document.createElement('div'); bg.c
 function closeSheet(){ const b=$('#sheetbg'); if(b) b.remove(); document.body.style.overflow=''; }
 
 render();
+
+/* ==========================================================
+   UPDATE: Pull-to-Refresh + Versionsprüfung
+   ========================================================== */
+async function checkUpdate(manual){
+  const ptr=$('#ptr'); ptr.classList.add('spin'); ptr.querySelector('.dot').style.transform='translateY(0)';
+  try{
+    const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'});
+    const v=(await r.json()).version;
+    if(v && v!==APP_VERSION){
+      toast('Update auf Version '+v+' …');
+      if('caches' in window){ try{ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); }catch(e){} }
+      setTimeout(()=>{ location.replace(location.pathname+'?v='+encodeURIComponent(v)); },600);
+      return;
+    }
+    if(manual) toast('Version '+APP_VERSION+' ist aktuell');
+  }catch(e){ if(manual) toast('Keine Verbindung'); }
+  finally{ setTimeout(()=>{ ptr.classList.remove('spin'); ptr.querySelector('.dot').style.transform='translateY(-60px)'; },400); }
+}
+(function(){
+  let startY=null, pulling=false, dist=0; const TH=70; const dot=$('#ptr .dot');
+  document.addEventListener('touchstart',e=>{ if(window.scrollY<=0 && !$('#sheetbg')){ startY=e.touches[0].clientY; pulling=true; dist=0; } },{passive:true});
+  document.addEventListener('touchmove',e=>{ if(!pulling||startY==null) return; dist=e.touches[0].clientY-startY; if(dist>0){ dot.style.transition='none'; dot.style.transform=`translateY(${Math.min(dist/2,60)-60}px) rotate(${dist*2}deg)`; } },{passive:true});
+  document.addEventListener('touchend',()=>{ if(!pulling) return; pulling=false; dot.style.transition=''; if(dist>TH){ checkUpdate(true); } else { dot.style.transform='translateY(-60px)'; } startY=null; },{passive:true});
+  // Automatisch beim Start und beim Zurückkehren in die App
+  checkUpdate(false);
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') checkUpdate(false); });
+})();
 </script>
 </body>
 </html>
