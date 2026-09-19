@@ -61,6 +61,8 @@ main{max-width:640px;margin:0 auto;padding:8px 16px 0}
 .pill.orange{background:rgba(255,149,0,.14);color:var(--orange)}
 .illu{width:100%;display:block;margin:6px 0 10px;border-radius:12px;background:var(--card2)}
 .illu svg{width:100%;height:auto;display:block}
+.illu img{width:100%;height:auto;display:block;border-radius:12px;background:#fff}
+.item .thumb img{width:100%;height:100%;object-fit:cover;background:#fff}
 
 .sets{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .set{flex:1 1 0;min-width:72px;background:var(--card2);border-radius:12px;padding:8px 6px;text-align:center}
@@ -304,7 +306,13 @@ const ILLU = (() => {
   ];
   function match(name){ for(const [re,id] of RULES){ if(re.test(name)) return id; } return 'generic'; }
   function svg(id, opts){ return render(LIB[id]||LIB.generic, opts); }
-  return {LIB, match, svg};
+  // Übungen mit generiertem Anatomie-Bild (img/<id>.jpg). Andere fallen auf die Strichzeichnung zurück.
+  const PHOTOS = new Set(['split_squat','db_row','rdl','lat_pulldown','abduction','cable_rotation','goblet_squat','kneeling_row','single_leg_rdl','shoulder_press','side_bend','hyperextension']);
+  function img(id, opts={}){
+    if(PHOTOS.has(id)) return `<img src="img/${id}.jpg" alt="${(LIB[id]||{}).title||''}" loading="lazy">`;
+    return svg(id, opts);
+  }
+  return {LIB, match, svg, img, PHOTOS};
 })();
 
 /* ==========================================================
@@ -407,7 +415,7 @@ function renderTrain(){
         <button class="btn sm gray" data-act="toggle">${entered?'Bearbeiten':'Bild ein/aus'}</button>
       </div>
       <div class="streak">Steigerung: <i class="${(e.streak||0)>=1?'on':''}"></i><i class="${(e.streak||0)>=2?'on':''}"></i> <span>${e.streak||0}/2 Einheiten voll geschafft</span></div>
-      <div class="illu ${entered?'hidden':''}">${ILLU.svg(e.img)}</div>
+      <div class="illu ${entered?'hidden':''}">${ILLU.img(e.img)}</div>
       <div class="row" style="margin-top:6px"><span class="meta">Gewicht heute</span>
         <input type="number" inputmode="decimal" step="0.5" data-f="weight" value="${en.weight??''}" placeholder="–" style="width:80px;text-align:right;border:0;border-bottom:1px solid var(--line);background:transparent;font-size:17px;font-weight:600;outline:none"> <span class="meta">kg</span></div>
       <div class="sets">${Array.from({length:e.sets},(_,i)=>{
@@ -473,7 +481,7 @@ function finishWorkout(){
 function renderExercises(){
   setHeader('Übungen',`${S.exercises.length} Übungen`);
   const grp=day=>S.exercises.filter(e=>e.days.includes(day));
-  const item=e=>`<div class="item link" data-id="${e.id}"><div class="thumb">${ILLU.svg(e.img,{labels:false})}</div>
+  const item=e=>`<div class="item link" data-id="${e.id}"><div class="thumb">${ILLU.img(e.img,{labels:false})}</div>
     <div class="grow"><div class="name" style="font-size:16px">${esc(e.name)}</div><div class="meta">${e.sets}×${e.reps} · ${fmtW(e.weight)} · +${String(e.inc).replace('.',',')} kg${e.days.length>1?' · A+B':''}</div></div><span class="chev">›</span></div>`;
   let h=`<button class="btn primary" id="addEx" style="margin-top:10px">+ Übung hinzufügen</button>`;
   for(const day of ['A','B']){
@@ -502,7 +510,7 @@ function editExercise(ex){
   let autoImg = isNew;
   const imgOptions=Object.keys(ILLU.LIB).map(k=>`<option value="${k}">${esc(ILLU.LIB[k].title)}</option>`).join('');
   const h=`<h3>${isNew?'Neue Übung':'Übung bearbeiten'}</h3>
-    <div class="illu" id="prev">${ILLU.svg(e.img)}</div>
+    <div class="illu" id="prev">${ILLU.img(e.img)}</div>
     <div class="list form">
       <div class="item"><label>Name</label><input type="text" id="fName" value="${esc(e.name)}" placeholder="z. B. Latzug"></div>
       <div class="item"><label>Tage</label><div class="chips">
@@ -521,10 +529,10 @@ function editExercise(ex){
     ${!isNew?`<button class="btn red" id="fDel" style="width:100%;margin-top:8px">Übung löschen</button>`:''}`;
   sheet(h);
   const sel=$('#fImg'); sel.value=e.img;
-  const hint=()=>{ $('#imgHint').textContent = e.img==='generic' ? 'Noch kein passendes Bild. Nenn mir die Übung im Chat, dann zeichne ich es und spiele es ein.' : 'Automatisch zugeordnet – bei Bedarf hier ändern.'; };
+  const hint=()=>{ $('#imgHint').textContent = e.img==='generic' ? 'Noch kein passendes Bild. Nenn mir die Übung im Chat, dann generiere ich es und spiele es ein.' : (ILLU.PHOTOS.has(e.img)?'Automatisch zugeordnet – bei Bedarf hier ändern.':'Vorläufige Zeichnung – Anatomie-Bild kann ich im Chat nachgenerieren.'); };
   hint();
-  $('#fName').oninput=ev=>{ e.name=ev.target.value; if(autoImg){ e.img=ILLU.match(e.name); sel.value=e.img; $('#prev').innerHTML=ILLU.svg(e.img); hint(); } };
-  sel.onchange=()=>{ e.img=sel.value; autoImg=false; $('#prev').innerHTML=ILLU.svg(e.img); hint(); };
+  $('#fName').oninput=ev=>{ e.name=ev.target.value; if(autoImg){ e.img=ILLU.match(e.name); sel.value=e.img; $('#prev').innerHTML=ILLU.img(e.img); hint(); } };
+  sel.onchange=()=>{ e.img=sel.value; autoImg=false; $('#prev').innerHTML=ILLU.img(e.img); hint(); };
   document.querySelectorAll('.chip[data-day]').forEach(c=>c.onclick=()=>{ const d=c.dataset.day; if(e.days.includes(d)){ if(e.days.length>1) e.days=e.days.filter(x=>x!==d); } else e.days.push(d); c.classList.toggle('on',e.days.includes(d)); });
   $('#fSave').onclick=()=>{
     e.name=$('#fName').value.trim(); if(!e.name){ toast('Bitte Namen eingeben'); return; }
