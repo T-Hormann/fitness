@@ -116,7 +116,7 @@ h2.sec{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercas
 /* Form */
 .form .item{gap:8px}
 .form label{flex:1;font-size:17px}
-.form input[type=text],.form input[type=number],.form input[type=email],.form input[type=password],.form select{border:0;background:transparent;text-align:right;font-size:17px;min-width:0;width:50%;outline:none;color:var(--blue)}
+.form input[type=text],.form input[type=number],.form input[type=email],.form input[type=password],.form input[type=date],.form select{border:0;background:transparent;text-align:right;font-size:17px;min-width:0;width:50%;outline:none;color:var(--blue)}
 .form input[type=text],.form input[type=email],.form input[type=password]{color:var(--txt)}
 .form .hint{font-size:13px;color:var(--muted);padding:0 16px 10px}
 .chips{display:flex;gap:8px}
@@ -330,7 +330,7 @@ const ILLU = (() => {
 /* ==========================================================
    DATEN
    ========================================================== */
-const APP_VERSION='2.1.0';
+const APP_VERSION='2.2.0';
 const KEY='training.v1';
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const today=()=>new Date().toISOString().slice(0,10);
@@ -607,21 +607,59 @@ function renderHistory(){
   setHeader('Verlauf',`${S.sessions.length} Einheiten`);
   if(!S.sessions.length){ view.innerHTML='<div class="empty">Noch keine Einheit abgeschlossen.</div>'; return; }
   let h='';
-  for(const s of [...S.sessions].reverse()){
+  const sorted=[...S.sessions].sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
+  for(const s of sorted){
     const ups=s.entries.filter(x=>x.increased);
     h+=`<div class="card" data-s="${s.id}"><div class="row"><div class="grow"><div class="name">${fmtDate(s.date)} <span class="pill blue">${esc(S.splitNames[s.day]||s.day)}</span></div>
       <div class="meta">${s.entries.length} Übungen · ${s.entries.filter(x=>x.success).length} voll geschafft${ups.length?` · <span class="badge-up">${ups.length}× gesteigert</span>`:''}</div></div>
-      <button class="btn sm gray" data-act="del">Löschen</button></div>
+      <button class="btn sm" data-act="edit">Bearbeiten</button><button class="btn sm gray" data-act="del">Löschen</button></div>
       <div style="margin-top:8px">${s.entries.map(x=>`<div class="hist-row"><span>${x.success?'✅':'◻️'} ${esc(x.name)}</span><span class="reps">${x.reps.join('/')} @ ${fmtW(x.weight)}${x.increased?` <span class="badge-up">→ ${fmtW(x.to)}</span>`:''}</span></div>`).join('')}</div></div>`;
   }
   view.innerHTML=h;
+  view.querySelectorAll('[data-act=edit]').forEach(b=>b.onclick=()=>editSession(S.sessions.find(x=>x.id===b.closest('.card').dataset.s)));
   view.querySelectorAll('[data-act=del]').forEach(b=>b.onclick=()=>{
     const id=b.closest('.card').dataset.s;
     if(!confirm('Einheit löschen? Das Gewicht der Übungen wird nicht zurückgesetzt, nur der Eintrag entfernt.')) return;
     const s=S.sessions.find(x=>x.id===id);
-    for(const en of s.entries){ const e=S.exercises.find(x=>x.id===en.exId); if(e) e.log=e.log.filter(l=>!(l.date===s.date&&l.day===s.day&&l.reps.join()===en.reps.join())); }
+    for(const en of s.entries){ const e=S.exercises.find(x=>x.id===en.exId); if(e){ e.log=e.log.filter(l=>!(l.date===s.date&&l.day===s.day&&l.reps.join()===en.reps.join())); recomputeStreak(e); } }
     S.sessions=S.sessions.filter(x=>x.id!==id); save(); render();
   });
+}
+// Steigerungszähler aus dem Verlauf neu berechnen (Gewichte bleiben unangetastet)
+function recomputeStreak(e){
+  e.log.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  let st=0; for(const l of e.log){ if(l.success){ st++; if(st>=2) st=0; } else st=0; }
+  e.streak=st;
+}
+function editSession(s){
+  if(!s) return;
+  const h=`<h3>Einheit bearbeiten</h3>
+    <div class="list form">
+      <div class="item"><label>Datum</label><input type="date" id="sDate" value="${s.date}"></div>
+      <div class="item"><label>Split</label><div class="chips"><button class="chip ${s.day==='A'?'on':''}" data-day="A">${esc(S.splitNames.A)}</button><button class="chip ${s.day==='B'?'on':''}" data-day="B">${esc(S.splitNames.B)}</button></div></div>
+    </div>
+    ${s.entries.map((x,i)=>`<div class="card" data-i="${i}"><div class="name" style="font-size:16px">${esc(x.name)}</div>
+      <div class="row" style="margin-top:6px"><span class="meta">Gewicht</span><input type="number" inputmode="decimal" step="0.25" data-f="w" value="${x.weight??''}" placeholder="–" style="width:80px;text-align:right;border:0;border-bottom:1px solid var(--line);background:transparent;font-size:17px;font-weight:600;outline:none"> <span class="meta">kg</span></div>
+      <div class="sets">${x.reps.map((r,j)=>`<div class="set"><div class="lbl">Satz ${j+1}</div><div class="ctl"><input type="number" inputmode="numeric" data-j="${j}" value="${r}" style="width:60px"></div></div>`).join('')}</div></div>`).join('')}
+    <button class="btn primary" id="sSave">Speichern</button>`;
+  sheet(h);
+  let day=s.day;
+  document.querySelectorAll('.chip[data-day]').forEach(c=>c.onclick=()=>{ day=c.dataset.day; document.querySelectorAll('.chip[data-day]').forEach(x=>x.classList.toggle('on',x.dataset.day===day)); });
+  $('#sSave').onclick=()=>{
+    const newDate=$('#sDate').value||s.date;
+    // alte Log-Einträge entfernen
+    for(const en of s.entries){ const e=S.exercises.find(x=>x.id===en.exId); if(e) e.log=e.log.filter(l=>!(l.date===s.date&&l.day===s.day&&l.reps.join()===en.reps.join())); }
+    s.date=newDate; s.day=day;
+    document.querySelectorAll('#sheetbg .card[data-i]').forEach(card=>{
+      const en=s.entries[+card.dataset.i]; const e=S.exercises.find(x=>x.id===en.exId);
+      const w=card.querySelector('[data-f=w]').value; en.weight=w===''?null:Number(w);
+      en.reps=[...card.querySelectorAll('input[data-j]')].map(i=>Number(i.value)||0);
+      const target=e?e.reps:10; en.success=en.reps.every(r=>r>=target);
+      if(e){ e.log.push({date:s.date,day:s.day,reps:en.reps,weight:en.weight,success:en.success,increased:!!en.increased,to:en.increased?en.to:null}); recomputeStreak(e); }
+    });
+    S.sessions.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+    save(); closeSheet(); render(); toast('Einheit gespeichert');
+  };
 }
 
 /* ---------- SHEET ---------- */
