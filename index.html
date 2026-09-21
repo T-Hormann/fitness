@@ -116,8 +116,8 @@ h2.sec{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercas
 /* Form */
 .form .item{gap:8px}
 .form label{flex:1;font-size:17px}
-.form input[type=text],.form input[type=number],.form select{border:0;background:transparent;text-align:right;font-size:17px;min-width:0;width:50%;outline:none;color:var(--blue)}
-.form input[type=text]{color:var(--txt)}
+.form input[type=text],.form input[type=number],.form input[type=email],.form input[type=password],.form select{border:0;background:transparent;text-align:right;font-size:17px;min-width:0;width:50%;outline:none;color:var(--blue)}
+.form input[type=text],.form input[type=email],.form input[type=password]{color:var(--txt)}
 .form .hint{font-size:13px;color:var(--muted);padding:0 16px 10px}
 .chips{display:flex;gap:8px}
 .chip{padding:6px 12px;border-radius:999px;background:rgba(118,118,128,.12);font-size:14px;font-weight:600;color:var(--txt)}
@@ -326,7 +326,7 @@ const ILLU = (() => {
 /* ==========================================================
    DATEN
    ========================================================== */
-const APP_VERSION='1.2.0';
+const APP_VERSION='2.0.0';
 const KEY='training.v1';
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const today=()=>new Date().toISOString().slice(0,10);
@@ -350,12 +350,14 @@ function defaultExercises(){
     mk('Hyperextension',['B'],2.5,'hyperextension'),
   ];
 }
+function freshState(){ return {exercises:defaultExercises(),sessions:[],draft:null,day:'A',splitNames:{A:'Split 1',B:'Split 2'},updatedAt:Date.now()}; }
 let S = load();
 function load(){
-  try{ const s=JSON.parse(localStorage.getItem(KEY)); if(s&&s.exercises) return s; }catch(e){}
-  return {exercises:defaultExercises(),sessions:[],draft:null,day:'A',splitNames:{A:'Split 1',B:'Split 2'}};
+  try{ const s=JSON.parse(localStorage.getItem(KEY)); if(s&&s.exercises){ if(!s.updatedAt) s.updatedAt=Date.now(); return s; } }catch(e){}
+  return freshState();
 }
-function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){ toast('Speichern fehlgeschlagen'); } }
+function saveLocal(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){ toast('Speichern fehlgeschlagen'); } }
+function save(){ S.updatedAt=Date.now(); saveLocal(); FB.push(); }
 
 /* ==========================================================
    PROGRESSION
@@ -373,6 +375,39 @@ function applyResult(ex, repsArr, weight, date, day){
   }
   ex.log.push({date,day,reps:repsArr.map(Number),weight:weight==null||weight===''?null:Number(weight),success,increased,to:increased?to:null});
   return {success,increased,from,to};
+}
+
+/* ==========================================================
+   CLOUD-SYNC (Firebase Auth + Firestore) – Bridge zum Modul unten
+   ========================================================== */
+const FB = {
+  user:null, ready:false, _t:null, _api:null,
+  push(){ if(!this._api||!this.user) return; clearTimeout(this._t); this._t=setTimeout(()=>this._api.write(S),600); },
+  logout(){ if(this._api) this._api.logout(); },
+  // Vom Modul aufgerufen, wenn ein Remote-Stand ankommt
+  applyRemote(remote){
+    if(!remote||!remote.exercises) return;
+    if((remote.updatedAt||0) > (S.updatedAt||0)){ S=remote; saveLocal(); if(!$('#sheetbg')) render(); }
+  }
+};
+function showLogin(){
+  const h=`<h3>Anmelden</h3>
+    <p class="note" style="margin:0 0 12px">Mit deinem Konto werden Übungen und Verlauf in der Cloud gespeichert und auf allen Geräten synchronisiert.</p>
+    <div class="list form">
+      <div class="item"><label>E-Mail</label><input type="email" id="lEmail" autocomplete="username" inputmode="email" placeholder="name@beispiel.de"></div>
+      <div class="item"><label>Passwort</label><input type="password" id="lPw" autocomplete="current-password" placeholder="••••••••"></div>
+    </div>
+    <div id="lErr" class="note" style="color:var(--red);min-height:18px;text-align:center"></div>
+    <button class="btn primary" id="lIn">Anmelden</button>
+    <button class="btn gray" id="lUp" style="width:100%;margin-top:8px">Neues Konto erstellen</button>
+    <button class="btn" id="lReset" style="width:100%;margin-top:8px">Passwort vergessen</button>`;
+  sheet(h, {locked:true});
+  const err=m=>{ $('#lErr').textContent=m; };
+  const creds=()=>({email:$('#lEmail').value.trim(), pw:$('#lPw').value});
+  const map=e=>({'auth/invalid-email':'Ungültige E-Mail-Adresse','auth/user-not-found':'Kein Konto mit dieser E-Mail','auth/wrong-password':'Falsches Passwort','auth/invalid-credential':'E-Mail oder Passwort falsch','auth/email-already-in-use':'Für diese E-Mail gibt es schon ein Konto – bitte anmelden','auth/weak-password':'Passwort zu kurz (mind. 6 Zeichen)','auth/network-request-failed':'Keine Verbindung','auth/missing-password':'Bitte Passwort eingeben'}[e.code]||e.message);
+  $('#lIn').onclick=async()=>{ const c=creds(); if(!c.email||!c.pw) return err('Bitte E-Mail und Passwort eingeben'); try{ await FB._api.login(c.email,c.pw); }catch(e){ err(map(e)); } };
+  $('#lUp').onclick=async()=>{ const c=creds(); if(!c.email||!c.pw) return err('Bitte E-Mail und Passwort eingeben'); try{ await FB._api.signup(c.email,c.pw); }catch(e){ err(map(e)); } };
+  $('#lReset').onclick=async()=>{ const c=creds(); if(!c.email) return err('Bitte E-Mail eingeben'); try{ await FB._api.reset(c.email); err('E-Mail zum Zurücksetzen wurde gesendet'); }catch(e){ err(map(e)); } };
 }
 
 /* ==========================================================
@@ -500,19 +535,20 @@ function renderExercises(){
   h+=`<h2 class="sec">Einstellungen</h2><div class="list form">
     <div class="item"><label>Name Split 1</label><input type="text" id="nA" value="${esc(S.splitNames.A)}"></div>
     <div class="item"><label>Name Split 2</label><input type="text" id="nB" value="${esc(S.splitNames.B)}"></div>
-    <div class="item link" id="exp"><label>Backup exportieren (JSON)</label><span class="chev">›</span></div>
-    <div class="item link" id="imp"><label>Backup importieren</label><span class="chev">›</span><input type="file" id="impFile" accept="application/json" class="hidden"></div>
     <div class="item link" id="reset"><label style="color:var(--red)">Alle Daten zurücksetzen</label></div>
-  </div><p class="note" style="text-align:center">Daten liegen nur in diesem Browser. Regelmäßig ein Backup exportieren.</p>`;
+  </div>
+  <h2 class="sec">Konto</h2><div class="list form">
+    <div class="item"><label>Angemeldet als</label><span class="meta" style="text-align:right">${esc(FB.user?FB.user.email:'–')}</span></div>
+    <div class="item"><label>Sync</label><span class="meta" id="syncState">${FB.user?(navigator.onLine?'Verbunden':'Offline – wird nachgeholt'):'Nicht angemeldet'}</span></div>
+    <div class="item link" id="logout"><label style="color:var(--red)">Abmelden</label></div>
+  </div><p class="note" style="text-align:center">Deine Daten werden automatisch in der Cloud gespeichert und auf allen Geräten mit diesem Konto synchronisiert.</p>`;
   view.innerHTML=h;
   $('#addEx').onclick=()=>editExercise(null);
   view.querySelectorAll('.item[data-id]').forEach(i=>i.onclick=()=>editExercise(S.exercises.find(e=>e.id===i.dataset.id)));
   $('#nA').onchange=ev=>{S.splitNames.A=ev.target.value||'Split 1';save();};
   $('#nB').onchange=ev=>{S.splitNames.B=ev.target.value||'Split 2';save();};
-  $('#exp').onclick=()=>{ const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`training-backup-${today()}.json`; a.click(); };
-  $('#imp').onclick=()=>$('#impFile').click();
-  $('#impFile').onchange=ev=>{ const f=ev.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ try{ const s=JSON.parse(r.result); if(!s.exercises) throw 0; S=s; save(); toast('Backup importiert'); render(); }catch(e){ toast('Ungültige Datei'); } }; r.readAsText(f); };
-  $('#reset').onclick=()=>{ if(confirm('Wirklich alle Übungen, Verläufe und Einstellungen löschen?')){ localStorage.removeItem(KEY); S=load(); render(); toast('Zurückgesetzt'); } };
+  $('#reset').onclick=()=>{ if(confirm('Wirklich alle Übungen, Verläufe und Einstellungen löschen? Das gilt auch für die Cloud und alle Geräte.')){ S=freshState(); save(); render(); toast('Zurückgesetzt'); } };
+  $('#logout').onclick=()=>{ if(confirm('Abmelden? Deine Daten bleiben in der Cloud gespeichert.')) FB.logout(); };
 }
 function editExercise(ex){
   const isNew=!ex;
@@ -584,7 +620,7 @@ function renderHistory(){
 }
 
 /* ---------- SHEET ---------- */
-function sheet(html){ closeSheet(); const bg=document.createElement('div'); bg.className='sheet-bg'; bg.id='sheetbg'; bg.innerHTML=`<div class="sheet"><div class="grab"></div>${html}</div>`; bg.onclick=ev=>{ if(ev.target===bg) closeSheet(); }; document.body.appendChild(bg); document.body.style.overflow='hidden'; }
+function sheet(html,opts={}){ closeSheet(); const bg=document.createElement('div'); bg.className='sheet-bg'; bg.id='sheetbg'; if(opts.locked) bg.dataset.locked='1'; bg.innerHTML=`<div class="sheet"><div class="grab"></div>${html}</div>`; bg.onclick=ev=>{ if(ev.target===bg && !opts.locked) closeSheet(); }; document.body.appendChild(bg); document.body.style.overflow='hidden'; }
 function closeSheet(){ const b=$('#sheetbg'); if(b) b.remove(); document.body.style.overflow=''; }
 
 render();
@@ -616,6 +652,69 @@ async function checkUpdate(manual){
   checkUpdate(false);
   document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') checkUpdate(false); });
 })();
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+import { getAuth, setPersistence, indexedDBLocalPersistence, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDDbXJ55NDWLN16nSZySqpMD5nE62CUI4A",
+  authDomain: "training-app-bb00c.firebaseapp.com",
+  projectId: "training-app-bb00c",
+  storageBucket: "training-app-bb00c.firebasestorage.app",
+  messagingSenderId: "519892689499",
+  appId: "1:519892689499:web:164a544a0c967a4a84957e"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+try{ await setPersistence(auth, indexedDBLocalPersistence); }catch(e){}
+let db;
+try{ db = initializeFirestore(app, {localCache: persistentLocalCache({tabManager: persistentSingleTabManager()})}); }
+catch(e){ db = initializeFirestore(app, {}); }
+
+let unsub=null;
+const ref = uid => doc(db,'users',uid,'data','state');
+
+FB._api = {
+  login:(e,p)=>signInWithEmailAndPassword(auth,e,p),
+  signup:(e,p)=>createUserWithEmailAndPassword(auth,e,p),
+  reset:(e)=>sendPasswordResetEmail(auth,e),
+  logout:()=>signOut(auth),
+  async write(state){
+    if(!FB.user) return;
+    try{ await setDoc(ref(FB.user.uid), {data: JSON.stringify(state), updatedAt: state.updatedAt||Date.now()}); }
+    catch(e){ console.warn('sync write', e); }
+  }
+};
+
+let hadUser=null;
+onAuthStateChanged(auth, async user => {
+  const wasLoggedOut = hadUser===false; hadUser=!!user;
+  FB.user = user; FB.ready = true;
+  if(unsub){ unsub(); unsub=null; }
+  if(!user){ showLogin(); return; }
+  closeSheet();
+  // Erstabgleich: Cloud-Stand gegen lokalen Stand
+  try{
+    const snap = await getDoc(ref(user.uid));
+    if(!snap.exists()){ await FB._api.write(S); }
+    else{
+      const remote = JSON.parse(snap.data().data||'{}');
+      const localHasData = S.sessions.length>0 || S.exercises.some(e=>e.weight!=null || e.log.length);
+      if(remote.exercises && (!localHasData || (remote.updatedAt||0) >= (S.updatedAt||0))){ S=remote; saveLocal(); }
+      else { await FB._api.write(S); }
+    }
+  }catch(e){ console.warn('sync init', e); }
+  // Live-Updates von anderen Geräten
+  unsub = onSnapshot(ref(user.uid), snap => {
+    if(!snap.exists() || snap.metadata.hasPendingWrites) return;
+    try{ FB.applyRemote(JSON.parse(snap.data().data||'{}')); }catch(e){}
+  });
+  render(); if(wasLoggedOut) toast('Angemeldet als '+user.email);
+});
+window.addEventListener('online',()=>{ const el=$('#syncState'); if(el) el.textContent='Verbunden'; });
+window.addEventListener('offline',()=>{ const el=$('#syncState'); if(el) el.textContent='Offline – wird nachgeholt'; });
 </script>
 </body>
 </html>
