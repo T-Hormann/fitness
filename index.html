@@ -292,6 +292,9 @@ const ILLU = (() => {
       {pose:{head:[104,132],neck:[100,120],hip:[72,88],sh:[98,118],elbow:[88,126],wrist:[100,128],knee:[50,110],ankle:[30,130]},
        props:[{t:'block',x:14,y:110,w:10,h:36,back:true},{t:'pad',from:[30,128],to:[72,92],w:14,back:true},{t:'pad',from:[24,136],to:[38,136],w:8,back:true},{t:'block',x:60,y:104,w:8,h:42,back:true},{t:'arrow',from:[126,64],to:[122,112]}]} ]},
 
+    leg_raise:{ title:'Beinheben am Dipständer', frames:[
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]},
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]} ]},
     bench_press:{ title:'Bankdrücken (LH)', frames:[
       {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]},
       {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]} ]},
@@ -311,6 +314,7 @@ const ILLU = (() => {
     [/latzug|pulldown|klimmzug|pull.?up/i,'lat_pulldown'],
     [/abduk|abduc/i,'abduction'],
     [/rotation|woodchop|pallof|rumpf/i,'cable_rotation'],
+    [/beinheben|leg.?raise|knieheben|knee.?raise|dipständer/i,'leg_raise'],
     [/bankdr|bench/i,'bench_press'],
     [/schulterdr|overhead|press|drücken/i,'shoulder_press'],
     [/side.?bend|seitneig|seitbeug/i,'side_bend'],
@@ -319,7 +323,7 @@ const ILLU = (() => {
   function match(name){ for(const [re,id] of RULES){ if(re.test(name)) return id; } return 'generic'; }
   function svg(id, opts){ return render(LIB[id]||LIB.generic, opts); }
   // Übungen mit generiertem Anatomie-Bild (img/<id>.jpg). Andere fallen auf die Strichzeichnung zurück.
-  const PHOTOS = new Set(['split_squat','db_row','rdl','lat_pulldown','abduction','cable_rotation','goblet_squat','kneeling_row','single_leg_rdl','shoulder_press','side_bend','hyperextension','bench_press']);
+  const PHOTOS = new Set(['split_squat','db_row','rdl','lat_pulldown','abduction','cable_rotation','goblet_squat','kneeling_row','single_leg_rdl','shoulder_press','side_bend','hyperextension','bench_press','leg_raise']);
   function img(id, opts={}){
     if(PHOTOS.has(id)) return `<img src="img/${id}.jpg" alt="${(LIB[id]||{}).title||''}" loading="lazy">`;
     return svg(id, opts);
@@ -330,7 +334,7 @@ const ILLU = (() => {
 /* ==========================================================
    DATEN
    ========================================================== */
-const APP_VERSION='2.2.0';
+const APP_VERSION='2.3.0';
 const KEY='training.v1';
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const today=()=>new Date().toISOString().slice(0,10);
@@ -372,14 +376,16 @@ function save(){ S.updatedAt=Date.now(); saveLocal(); FB.push(); }
    ========================================================== */
 function applyResult(ex, repsArr, weight, date, day){
   const success = repsArr.length>=ex.sets && repsArr.slice(0,ex.sets).every(r=>Number(r)>=ex.reps);
-  let increased=false, from=weight, to=weight;
+  const target=ex.reps;
+  let increased=false, from=weight, to=weight, toReps=null;
   if(success){ ex.streak=(ex.streak||0)+1; } else { ex.streak=0; }
   if(success && ex.streak>=2){
     if(weight!=null && weight!==''){ to=Math.round((Number(weight)+Number(ex.inc||0))*100)/100; ex.weight=to; increased=true; }
+    else { ex.reps=target+1; toReps=ex.reps; increased=true; }   // ohne Gewicht: eine Wiederholung mehr
     ex.streak=0;
   }
-  ex.log.push({date,day,reps:repsArr.map(Number),weight:weight==null||weight===''?null:Number(weight),success,increased,to:increased?to:null});
-  return {success,increased,from,to};
+  ex.log.push({date,day,reps:repsArr.map(Number),weight:weight==null||weight===''?null:Number(weight),target,success,increased,to:(increased&&toReps==null)?to:null,toReps});
+  return {success,increased,from,to,toReps,target};
 }
 
 /* ==========================================================
@@ -461,10 +467,10 @@ function renderTrain(){
     h+=`<div class="card ${entered?'done':''}" data-ex="${e.id}">
       <div class="row">
         <div class="grow"><div class="name">${esc(e.name)}${e.days.length>1?'<span class="pill">A+B</span>':''}</div>
-        <div class="meta">${e.sets} × ${e.reps} Wdh. · ${fmtW(e.weight)}${last?` · zuletzt ${last.reps.join('/')}`:''}</div></div>
+        <div class="meta">${e.sets} × ${e.reps} Wdh. · ${e.weight==null?'Körpergewicht':fmtW(e.weight)}${last?` · zuletzt ${last.reps.join('/')}`:''}</div></div>
         <button class="btn sm gray" data-act="toggle">${entered?'Bearbeiten':'Bild ein/aus'}</button>
       </div>
-      <div class="streak">Steigerung: <i class="${(e.streak||0)>=1?'on':''}"></i><i class="${(e.streak||0)>=2?'on':''}"></i> <span>${e.streak||0}/2 Einheiten voll geschafft</span></div>
+      <div class="streak">Steigerung (${e.weight==null?'+1 Wdh.':'+'+String(e.inc).replace('.',',')+' kg'}): <i class="${(e.streak||0)>=1?'on':''}"></i><i class="${(e.streak||0)>=2?'on':''}"></i> <span>${e.streak||0}/2 Einheiten voll geschafft</span></div>
       <div class="illu ${entered?'hidden':''}">${ILLU.img(e.img)}</div>
       <div class="row" style="margin-top:6px"><span class="meta">Gewicht heute</span>
         <input type="number" inputmode="decimal" step="0.5" data-f="weight" value="${en.weight??''}" placeholder="–" style="width:80px;text-align:right;border:0;border-bottom:1px solid var(--line);background:transparent;font-size:17px;font-weight:600;outline:none"> <span class="meta">kg</span></div>
@@ -510,7 +516,7 @@ function finishWorkout(){
     const en=d.entries[e.id]; if(!en||!en.reps.some(r=>r!=='')) continue;
     const reps=en.reps.map(r=>r===''?0:Number(r));
     const r=applyResult(e,reps,en.weight,d.date,d.day);
-    sess.entries.push({exId:e.id,name:e.name,reps,weight:en.weight,success:r.success,increased:r.increased,to:r.to});
+    sess.entries.push({exId:e.id,name:e.name,reps,weight:en.weight,target:r.target,success:r.success,increased:r.increased,to:r.toReps==null?r.to:null,toReps:r.toReps});
     results.push({e,reps,...r});
   }
   S.sessions.push(sess); S.draft=null; save();
@@ -518,7 +524,7 @@ function finishWorkout(){
   let h=`<h3>Einheit gespeichert</h3><ul class="summary">`;
   for(const r of results){
     h+=`<li>${r.success?'✅':'◻️'} <b>${esc(r.e.name)}</b> ${r.reps.join('/')} @ ${fmtW(r.from)}`;
-    if(r.increased) h+=` <span class="badge-up">→ ${fmtW(r.to)} 🎉</span>`;
+    if(r.increased) h+=` <span class="badge-up">→ ${r.toReps!=null?r.toReps+' Wdh.':fmtW(r.to)} 🎉</span>`;
     else if(r.success) h+=` <span class="meta">(${r.e.streak}/2)</span>`;
     h+=`</li>`;
   }
@@ -569,13 +575,13 @@ function editExercise(ex){
         <button class="chip ${e.days.includes('B')?'on':''}" data-day="B">${esc(S.splitNames.B)}</button></div></div>
       <div class="item"><label>Sätze</label><input type="number" inputmode="numeric" id="fSets" value="${e.sets}" min="1" max="10"></div>
       <div class="item"><label>Ziel-Wiederholungen</label><input type="number" inputmode="numeric" id="fReps" value="${e.reps}" min="1"></div>
-      <div class="item"><label>Aktuelles Gewicht (kg)</label><input type="number" inputmode="decimal" step="0.5" id="fW" value="${e.weight??''}" placeholder="offen"></div>
+      <div class="item"><label>Aktuelles Gewicht (kg)</label><input type="number" inputmode="decimal" step="0.5" id="fW" value="${e.weight??''}" placeholder="Körpergewicht"></div>
       <div class="item"><label>Steigerung (kg)</label><input type="number" inputmode="decimal" step="0.5" id="fInc" value="${e.inc}"></div>
-      <div class="hint">Die kleinste mögliche Erhöhung im Studio, z. B. 2 kg bei Kurzhanteln, 5 kg am Gerät.</div>
+      <div class="hint">Die kleinste mögliche Erhöhung im Studio, z. B. 2 kg bei Kurzhanteln, 5 kg am Gerät. Ohne Gewicht (Körpergewicht, Feld leer lassen) wird stattdessen die Ziel-Wiederholungszahl um 1 erhöht.</div>
       <div class="item"><label>Bild</label><select id="fImg">${imgOptions}</select></div>
       <div class="hint" id="imgHint"></div>
     </div>
-    ${!isNew && e.log.length?`<h2 class="sec" style="margin-left:0">Verlauf</h2><div class="card">${sparkline(e)}<div>${e.log.slice(-8).reverse().map(l=>`<div class="hist-row"><span>${fmtDate(l.date)} <span class="pill">${esc(S.splitNames[l.day]||l.day)}</span></span><span class="reps">${l.reps.join('/')} @ ${fmtW(l.weight)}${l.increased?' <span class="badge-up">↑</span>':''}</span></div>`).join('')}</div></div>`:''}
+    ${!isNew && e.log.length?`<h2 class="sec" style="margin-left:0">Verlauf</h2><div class="card">${sparkline(e)}<div>${e.log.slice(-8).reverse().map(l=>`<div class="hist-row"><span>${fmtDate(l.date)} <span class="pill">${esc(S.splitNames[l.day]||l.day)}</span></span><span class="reps">${l.reps.join('/')} @ ${l.weight==null?'KG':fmtW(l.weight)}${l.increased?` <span class="badge-up">↑ ${l.toReps!=null?l.toReps+' Wdh.':fmtW(l.to)}</span>`:''}</span></div>`).join('')}</div></div>`:''}
     <button class="btn primary" id="fSave">Speichern</button>
     ${!isNew?`<button class="btn red" id="fDel" style="width:100%;margin-top:8px">Übung löschen</button>`:''}`;
   sheet(h);
@@ -613,7 +619,7 @@ function renderHistory(){
     h+=`<div class="card" data-s="${s.id}"><div class="row"><div class="grow"><div class="name">${fmtDate(s.date)} <span class="pill blue">${esc(S.splitNames[s.day]||s.day)}</span></div>
       <div class="meta">${s.entries.length} Übungen · ${s.entries.filter(x=>x.success).length} voll geschafft${ups.length?` · <span class="badge-up">${ups.length}× gesteigert</span>`:''}</div></div>
       <button class="btn sm" data-act="edit">Bearbeiten</button><button class="btn sm gray" data-act="del">Löschen</button></div>
-      <div style="margin-top:8px">${s.entries.map(x=>`<div class="hist-row"><span>${x.success?'✅':'◻️'} ${esc(x.name)}</span><span class="reps">${x.reps.join('/')} @ ${fmtW(x.weight)}${x.increased?` <span class="badge-up">→ ${fmtW(x.to)}</span>`:''}</span></div>`).join('')}</div></div>`;
+      <div style="margin-top:8px">${s.entries.map(x=>`<div class="hist-row"><span>${x.success?'✅':'◻️'} ${esc(x.name)}</span><span class="reps">${x.reps.join('/')} @ ${fmtW(x.weight)}${x.increased?` <span class="badge-up">→ ${x.toReps!=null?x.toReps+' Wdh.':fmtW(x.to)}</span>`:''}</span></div>`).join('')}</div></div>`;
   }
   view.innerHTML=h;
   view.querySelectorAll('[data-act=edit]').forEach(b=>b.onclick=()=>editSession(S.sessions.find(x=>x.id===b.closest('.card').dataset.s)));
@@ -654,8 +660,8 @@ function editSession(s){
       const en=s.entries[+card.dataset.i]; const e=S.exercises.find(x=>x.id===en.exId);
       const w=card.querySelector('[data-f=w]').value; en.weight=w===''?null:Number(w);
       en.reps=[...card.querySelectorAll('input[data-j]')].map(i=>Number(i.value)||0);
-      const target=e?e.reps:10; en.success=en.reps.every(r=>r>=target);
-      if(e){ e.log.push({date:s.date,day:s.day,reps:en.reps,weight:en.weight,success:en.success,increased:!!en.increased,to:en.increased?en.to:null}); recomputeStreak(e); }
+      const target=en.target??(e?e.reps:10); en.success=en.reps.every(r=>r>=target);
+      if(e){ e.log.push({date:s.date,day:s.day,reps:en.reps,weight:en.weight,target,success:en.success,increased:!!en.increased,to:en.increased?en.to:null,toReps:en.toReps??null}); recomputeStreak(e); }
     });
     S.sessions.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
     save(); closeSheet(); render(); toast('Einheit gespeichert');
