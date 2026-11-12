@@ -365,7 +365,7 @@ const ILLU = (() => {
 /* ==========================================================
    DATEN
    ========================================================== */
-const APP_VERSION='2.6.1';
+const APP_VERSION='2.7.0';
 const KEY='training.v1';
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const today=()=>new Date().toISOString().slice(0,10);
@@ -483,10 +483,19 @@ function ensureDraft(day){
   S.draft={day,date:today(),entries:{}};
   return S.draft;
 }
+// Übungen der heutigen Einheit: Split-Zuordnung + Tausch/Zusatz nur für heute
+function todayList(d){
+  const sw=d.swaps||{}, extra=d.extra||[];
+  const out=[];
+  for(const e of S.exercises){ if(!e.days.includes(d.day)) continue; const r=sw[e.id]?S.exercises.find(x=>x.id===sw[e.id]):null; const use=r||e; if(!out.includes(use)) out.push(use); }
+  for(const id of extra){ const e=S.exercises.find(x=>x.id===id); if(e&&!out.includes(e)) out.push(e); }
+  return out;
+}
+function swapInfo(d,e){ const sw=d.swaps||{}; const orig=Object.keys(sw).find(k=>sw[k]===e.id); return orig?S.exercises.find(x=>x.id===orig):null; }
 function renderTrain(){
   const day=S.day||'A';
   const d=ensureDraft(day);
-  const list=S.exercises.filter(e=>e.days.includes(day));
+  const list=todayList(d);
   const lastSess=[...S.sessions].reverse().find(s=>s.day===day);
   setHeader('Training', lastSess?`Zuletzt ${S.splitNames[day]}: ${fmtDate(lastSess.date)}`:'Bereit für die erste Einheit');
   const doneCount=list.filter(e=>isEntered(e,d)).length;
@@ -495,7 +504,7 @@ function renderTrain(){
       <button data-day="B" class="${day==='B'?'on':''}">${esc(S.splitNames.B)}</button></div>
     <div class="legend"><span>${doneCount} von ${list.length} Übungen eingetragen</span><span>${fmtDate(d.date)}</span></div>
     <div class="progress"><i style="width:${list.length?doneCount/list.length*100:0}%"></i></div>`;
-  if(!list.length) h+=`<div class="empty">Keine Übungen für ${esc(S.splitNames[day])}.<br>Unter „Übungen“ hinzufügen.</div>`;
+  if(!list.length) h+=`<div class="empty">Keine Übungen für ${esc(S.splitNames[day])}.<br>Unten über „Übungen dieses Splits“ zuordnen.</div>`;
   for(const e of list){
     const en=d.entries[e.id]||{reps:Array(e.sets).fill(''),weight:e.weight};
     const entered=isEntered(e,d);
@@ -506,6 +515,7 @@ function renderTrain(){
         <div class="meta">${e.sets} × ${e.reps} Wdh. · ${e.weight==null?'Körpergewicht':fmtW(e.weight)}${last?` · zuletzt ${last.reps.join('/')}`:''}</div></div>
         <button class="btn sm gray" data-act="toggle">${entered?'Bearbeiten':'Bild ein/aus'}</button>
       </div>
+      <div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap">${(()=>{const o=swapInfo(d,e); if(o) return `<span class="pill orange" style="margin:0">heute statt ${esc(o.name)}</span><button class="btn sm gray" data-act="unswap">Tausch aufheben</button>`; if((d.extra||[]).includes(e.id)) return `<span class="pill orange" style="margin:0">nur heute</span><button class="btn sm gray" data-act="unextra">Entfernen</button>`; return `<button class="btn sm gray" data-act="swap">Tauschen</button>`;})()}</div>
       <div class="streak">Steigerung (${e.weight==null?'+1 Wdh.':'+'+String(e.inc).replace('.',',')+' kg'}): <i class="${(e.streak||0)>=1?'on':''}"></i><i class="${(e.streak||0)>=2?'on':''}"></i> <span>${e.streak||0}/2 Einheiten voll geschafft</span></div>
       <div class="illu ${entered?'hidden':''}">${ILLU.img(e.img)}</div>
       <div class="row" style="margin-top:6px"><span class="meta">Gewicht heute</span>
@@ -518,7 +528,7 @@ function renderTrain(){
       <div class="actions"><button class="btn" data-act="all">✓ Alle ${e.reps} geschafft</button><button class="btn gray" data-act="clear">Leeren</button></div>
     </div>`;
   }
-  h+=`<button class="btn gray" id="editSplit" style="width:100%;margin-bottom:10px">Übungen dieses Splits</button>`;
+  h+=`<div class="actions" style="margin-bottom:10px"><button class="btn gray" id="addToday" style="flex:1">+ Übung nur heute</button><button class="btn gray" id="editSplit" style="flex:1">Übungen dieses Splits</button></div>`;
   if(list.length) h+=`<button class="btn primary" id="finish" ${doneCount?'':'disabled'}>Training abschließen</button>
     <p class="note" style="text-align:center">Eingaben werden automatisch zwischengespeichert.</p>`;
   view.innerHTML=h;
@@ -535,9 +545,29 @@ function renderTrain(){
     card.querySelector('[data-act=all]').onclick=()=>{ const en=getEn(); en.reps=Array(e.sets).fill(e.reps); save(); render(); };
     card.querySelector('[data-act=clear]').onclick=()=>{ delete d.entries[e.id]; save(); render(); };
     card.querySelector('[data-act=toggle]').onclick=()=>{ card.classList.remove('done'); card.querySelector('.illu').classList.toggle('hidden'); };
+    const sw=card.querySelector('[data-act=swap]'); if(sw) sw.onclick=()=>swapExercise(d,e);
+    const us=card.querySelector('[data-act=unswap]'); if(us) us.onclick=()=>{ const o=swapInfo(d,e); if(o){ delete d.swaps[o.id]; delete d.entries[e.id]; save(); render(); } };
+    const ue=card.querySelector('[data-act=unextra]'); if(ue) ue.onclick=()=>{ d.extra=(d.extra||[]).filter(x=>x!==e.id); delete d.entries[e.id]; save(); render(); };
   });
   const fin=$('#finish'); if(fin) fin.onclick=finishWorkout;
   $('#editSplit').onclick=()=>editSplit(day);
+  $('#addToday').onclick=()=>swapExercise(d,null);
+}
+// Übung für heute tauschen (orig gesetzt) oder zusätzlich aufnehmen (orig=null) – Split-Zuordnung bleibt unverändert
+function swapExercise(d, orig){
+  const today=todayList(d);
+  const cands=[...S.exercises].filter(e=>!today.includes(e)).sort((a,b)=>a.name.localeCompare(b.name,'de'));
+  const h=`<h3>${orig?'Ersatz für '+esc(orig.name):'Übung nur heute hinzufügen'}</h3>
+    <p class="note" style="margin:0 0 12px">${orig?'Gilt nur für diese Einheit. Der Fortschritt beider Übungen bleibt erhalten.':'Wird nur in dieser Einheit trainiert, die Split-Zuordnung ändert sich nicht.'}</p>
+    <div class="list">${cands.map(e=>`<div class="item link" data-id="${e.id}"><div class="thumb">${ILLU.img(e.img,{labels:false})}</div>
+      <div class="grow"><div class="name" style="font-size:16px">${esc(e.name)}</div><div class="meta">${e.sets}×${e.reps} · ${e.weight==null?'Körpergewicht':fmtW(e.weight)}${e.days.length?'':' · nicht zugeordnet'}</div></div><span class="chev">›</span></div>`).join('')||'<div class="item"><span class="meta">Keine weiteren Übungen</span></div>'}</div>`;
+  sheet(h);
+  document.querySelectorAll('#sheetbg .item[data-id]').forEach(it=>it.onclick=()=>{
+    const id=it.dataset.id;
+    if(orig){ d.swaps=d.swaps||{}; d.swaps[orig.id]=id; }
+    else { d.extra=d.extra||[]; d.extra.push(id); }
+    save(); closeSheet(); render(); toast(orig?'Getauscht – nur für heute':'Für heute hinzugefügt');
+  });
 }
 function editSplit(day){
   const all=[...S.exercises].sort((a,b)=>a.name.localeCompare(b.name,'de'));
@@ -559,7 +589,7 @@ function isEntered(e,d){ const en=d.entries[e.id]; return !!en && en.reps.some(r
 function softUpdate(card,e){
   const d=S.draft; const en=d.entries[e.id];
   card.querySelectorAll('.set').forEach((s,i)=>{ const v=en.reps[i]; s.classList.remove('ok','low'); if(v!=='') s.classList.add(Number(v)>=e.reps?'ok':'low'); });
-  const list=S.exercises.filter(x=>x.days.includes(d.day)); const n=list.filter(x=>isEntered(x,d)).length;
+  const list=todayList(d); const n=list.filter(x=>isEntered(x,d)).length;
   const p=view.querySelector('.progress i'); if(p) p.style.width=(list.length?n/list.length*100:0)+'%';
   const lg=view.querySelector('.legend span'); if(lg) lg.textContent=`${n} von ${list.length} Übungen eingetragen`;
   const fin=$('#finish'); if(fin) fin.disabled=!n;
@@ -567,14 +597,13 @@ function softUpdate(card,e){
 let lastFinish=null;
 function finishWorkout(){
   const d=S.draft; if(!d) return;
-  const list=S.exercises.filter(e=>e.days.includes(d.day)); const n=list.filter(e=>isEntered(e,d)).length;
+  const list=todayList(d); const n=list.filter(e=>isEntered(e,d)).length;
   if(n<list.length && !confirm(`Nur ${n} von ${list.length} Übungen eingetragen. Trotzdem abschließen?`)) return;
   // Sicherung für „Rückgängig“
   lastFinish={draft:JSON.parse(JSON.stringify(d)), exercises:JSON.parse(JSON.stringify(S.exercises))};
   const results=[]; const sess={id:uid(),date:d.date,day:d.day,entries:[]};
   lastFinish.sessId=sess.id;
-  for(const e of S.exercises){
-    if(!e.days.includes(d.day)) continue;
+  for(const e of todayList(d)){
     const en=d.entries[e.id]; if(!en||!en.reps.some(r=>r!=='')) continue;
     const reps=en.reps.map(r=>r===''?0:Number(r));
     const r=applyResult(e,reps,en.weight,d.date,d.day);
@@ -607,7 +636,7 @@ function undoFinish(){
 /* ---------- ÜBUNGEN ---------- */
 function renderExercises(){
   setHeader('Übungen',`${S.exercises.length} Übungen`);
-  const tag=e=>e.days.length===2?`<span class="pill blue">beide</span>`:e.days.map(d=>`<span class="pill ${d==='A'?'blue':'orange'}">${esc(S.splitNames[d])}</span>`).join('');
+  const tag=e=>!e.days.length?`<span class="pill">nicht zugeordnet</span>`:e.days.length===2?`<span class="pill blue">beide</span>`:e.days.map(d=>`<span class="pill ${d==='A'?'blue':'orange'}">${esc(S.splitNames[d])}</span>`).join('');
   const item=e=>`<div class="item link" data-id="${e.id}"><div class="thumb">${ILLU.img(e.img,{labels:false})}</div>
     <div class="grow"><div class="name" style="font-size:16px">${esc(e.name)}</div><div class="meta">${e.sets}×${e.reps} · ${e.weight==null?'Körpergewicht':fmtW(e.weight)+' · +'+String(e.inc).replace('.',',')+' kg'}</div><div style="margin-top:3px;margin-left:-6px">${tag(e)}</div></div><span class="chev">›</span></div>`;
   const all=[...S.exercises].sort((a,b)=>a.name.localeCompare(b.name,'de'));
@@ -641,7 +670,7 @@ function editExercise(ex){
     <div class="illu" id="prev">${ILLU.img(e.img)}</div>
     <div class="list form">
       <div class="item"><label>Name</label><input type="text" id="fName" value="${esc(e.name)}" placeholder="z. B. Latzug"></div>
-      <div class="item"><label>Tage</label><div class="chips">
+      <div class="item"><label>Tage <span class="meta" style="display:block;font-size:12px">keiner = Übung bleibt gespeichert, wird aber nicht trainiert</span></label><div class="chips">
         <button class="chip ${e.days.includes('A')?'on':''}" data-day="A">${esc(S.splitNames.A)}</button>
         <button class="chip ${e.days.includes('B')?'on':''}" data-day="B">${esc(S.splitNames.B)}</button></div></div>
       <div class="item"><label>Sätze</label><input type="number" inputmode="numeric" id="fSets" value="${e.sets}" min="1" max="10"></div>
@@ -661,7 +690,7 @@ function editExercise(ex){
   hint();
   $('#fName').oninput=ev=>{ e.name=ev.target.value; if(autoImg){ e.img=ILLU.match(e.name); sel.value=e.img; $('#prev').innerHTML=ILLU.img(e.img); hint(); } };
   sel.onchange=()=>{ e.img=sel.value; autoImg=false; $('#prev').innerHTML=ILLU.img(e.img); hint(); };
-  document.querySelectorAll('.chip[data-day]').forEach(c=>c.onclick=()=>{ const d=c.dataset.day; if(e.days.includes(d)){ if(e.days.length>1) e.days=e.days.filter(x=>x!==d); } else e.days.push(d); c.classList.toggle('on',e.days.includes(d)); });
+  document.querySelectorAll('.chip[data-day]').forEach(c=>c.onclick=()=>{ const d=c.dataset.day; if(e.days.includes(d)){ e.days=e.days.filter(x=>x!==d); } else e.days.push(d); c.classList.toggle('on',e.days.includes(d)); });
   $('#fSave').onclick=()=>{
     e.name=$('#fName').value.trim(); if(!e.name){ toast('Bitte Namen eingeben'); return; }
     e.sets=Math.max(1,parseInt($('#fSets').value)||3); e.reps=Math.max(1,parseInt($('#fReps').value)||10);
