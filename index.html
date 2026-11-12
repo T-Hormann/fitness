@@ -295,6 +295,24 @@ const ILLU = (() => {
       {pose:{head:[104,132],neck:[100,120],hip:[72,88],sh:[98,118],elbow:[88,126],wrist:[100,128],knee:[50,110],ankle:[30,130]},
        props:[{t:'block',x:14,y:110,w:10,h:36,back:true},{t:'pad',from:[30,128],to:[72,92],w:14,back:true},{t:'pad',from:[24,136],to:[38,136],w:8,back:true},{t:'block',x:60,y:104,w:8,h:42,back:true},{t:'arrow',from:[126,64],to:[122,112]}]} ]},
 
+    barbell_squat:{ title:'Kniebeuge (LH)', frames:[
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]},
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]} ]},
+    pass_to_place:{ title:'Pass to Place (Dead Bug mit KH)', frames:[
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]},
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]} ]},
+    reverse_fly:{ title:'Butterfly Reverse', frames:[
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]},
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]} ]},
+    face_pull:{ title:'Face Pulls (Kabelzug)', frames:[
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]},
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]} ]},
+    db_bench_press:{ title:'Kurzhantel-Bankdrücken', frames:[
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]},
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]} ]},
+    dips:{ title:'Dips', frames:[
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]},
+      {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]} ]},
     leg_raise:{ title:'Beinheben am Dipständer', frames:[
       {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]},
       {pose:{...FRONT_STAND,elbowL:[58,68],wristL:[54,90],elbowR:[102,68],wristR:[106,90]},props:[FLOOR]} ]},
@@ -308,8 +326,18 @@ const ILLU = (() => {
 
   // Automatische Zuordnung anhand des Übungsnamens
   const RULES = [
+    [/pass.?to.?place|dead.?bug/i,'pass_to_place'],
+    [/butterfly.?rev|reverse.?fly|reverse.?butterfly|rear.?delt/i,'reverse_fly'],
+    [/face.?pull/i,'face_pull'],
+    [/\bdips?\b/i,'dips'],
+    [/beinheben|leg.?raise|knieheben|knee.?raise|dipständer/i,'leg_raise'],
+    [/kurzhantel.?bank|kh.?bank|db.?bench|dumbbell.?bench/i,'db_bench_press'],
+    [/bankdr|bench/i,'bench_press'],
     [/split|ausfall|lunge|bulgar/i,'split_squat'],
-    [/goblet|kniebeuge|squat|beuge/i,'goblet_squat'],
+    [/goblet/i,'goblet_squat'],
+    [/langhantel|barbell|\blh\b/i,'barbell_squat'],
+    [/kniebeuge|squat|beuge/i,'goblet_squat'],
+
     [/halbknie|kniestand|kneel/i,'kneeling_row'],
     [/rudern|row/i,'db_row'],
     [/einbein|single.?leg|one.?leg/i,'single_leg_rdl'],
@@ -317,8 +345,6 @@ const ILLU = (() => {
     [/latzug|pulldown|klimmzug|pull.?up/i,'lat_pulldown'],
     [/abduk|abduc/i,'abduction'],
     [/rotation|woodchop|pallof|rumpf/i,'cable_rotation'],
-    [/beinheben|leg.?raise|knieheben|knee.?raise|dipständer/i,'leg_raise'],
-    [/bankdr|bench/i,'bench_press'],
     [/schulterdr|overhead|press|drücken/i,'shoulder_press'],
     [/side.?bend|seitneig|seitbeug/i,'side_bend'],
     [/hyperext|rückenstreck|back.?ext/i,'hyperextension'],
@@ -326,7 +352,7 @@ const ILLU = (() => {
   function match(name){ for(const [re,id] of RULES){ if(re.test(name)) return id; } return 'generic'; }
   function svg(id, opts){ return render(LIB[id]||LIB.generic, opts); }
   // Übungen mit generiertem Anatomie-Bild (img/<id>.jpg). Andere fallen auf die Strichzeichnung zurück.
-  const PHOTOS = new Set(['split_squat','db_row','rdl','lat_pulldown','abduction','cable_rotation','goblet_squat','kneeling_row','single_leg_rdl','shoulder_press','side_bend','hyperextension','bench_press','leg_raise']);
+  const PHOTOS = new Set(['split_squat','db_row','rdl','lat_pulldown','abduction','cable_rotation','goblet_squat','kneeling_row','single_leg_rdl','shoulder_press','side_bend','hyperextension','bench_press','leg_raise','barbell_squat','pass_to_place','reverse_fly','face_pull','db_bench_press','dips']);
   function img(id, opts={}){
     if(PHOTOS.has(id)) return `<img src="img/${id}.jpg" alt="${(LIB[id]||{}).title||''}" loading="lazy">`;
     return svg(id, opts);
@@ -337,7 +363,7 @@ const ILLU = (() => {
 /* ==========================================================
    DATEN
    ========================================================== */
-const APP_VERSION='2.4.0';
+const APP_VERSION='2.5.0';
 const KEY='training.v1';
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const today=()=>new Date().toISOString().slice(0,10);
