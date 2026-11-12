@@ -109,6 +109,8 @@ nav svg{width:26px;height:26px}
 .item .thumb{width:64px;height:40px;border-radius:8px;background:var(--card2);flex:0 0 auto;overflow:hidden}
 .item .thumb svg{width:100%;height:100%}
 .item .chev{color:var(--muted2);font-size:20px}
+.item .check{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;color:transparent;font-size:14px;font-weight:700;flex:0 0 auto}
+.item .check.on{background:var(--blue);border-color:var(--blue);color:#fff}
 .item.link{cursor:pointer}
 .item.link:active{background:var(--card2)}
 h2.sec{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:18px 0 8px 16px}
@@ -363,7 +365,7 @@ const ILLU = (() => {
 /* ==========================================================
    DATEN
    ========================================================== */
-const APP_VERSION='2.5.0';
+const APP_VERSION='2.6.0';
 const KEY='training.v1';
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const today=()=>new Date().toISOString().slice(0,10);
@@ -516,6 +518,7 @@ function renderTrain(){
       <div class="actions"><button class="btn" data-act="all">✓ Alle ${e.reps} geschafft</button><button class="btn gray" data-act="clear">Leeren</button></div>
     </div>`;
   }
+  h+=`<button class="btn gray" id="editSplit" style="width:100%;margin-bottom:10px">Übungen dieses Splits</button>`;
   if(list.length) h+=`<button class="btn primary" id="finish" ${doneCount?'':'disabled'}>Training abschließen</button>
     <p class="note" style="text-align:center">Eingaben werden automatisch zwischengespeichert.</p>`;
   view.innerHTML=h;
@@ -526,12 +529,31 @@ function renderTrain(){
     const getEn=()=>{ if(!d.entries[e.id]) d.entries[e.id]={reps:Array(e.sets).fill(''),weight:e.weight}; return d.entries[e.id]; };
     card.querySelectorAll('input[data-i]').forEach(inp=>inp.oninput=()=>{ getEn().reps[+inp.dataset.i]=inp.value===''?'':Number(inp.value); save(); softUpdate(card,e); });
     card.querySelectorAll('button[data-step]').forEach(b=>b.onclick=()=>{ const en=getEn(); const i=+b.dataset.i; const cur=en.reps[i]===''?(b.dataset.step>0?e.reps-1:e.reps+1):Number(en.reps[i]); en.reps[i]=Math.max(0,cur+Number(b.dataset.step)); card.querySelector(`input[data-i="${i}"]`).value=en.reps[i]; save(); softUpdate(card,e); });
-    card.querySelector('input[data-f=weight]').oninput=ev=>{ getEn().weight=ev.target.value===''?null:Number(ev.target.value); save(); };
+    card.querySelector('input[data-f=weight]').oninput=ev=>{ const v=ev.target.value===''?null:Number(ev.target.value); getEn().weight=v;
+      if(v!=null && v!==e.weight){ e.weight=v; e.streak=0; e.streakKey='w'+v; const m=card.querySelector('.meta'); if(m) m.textContent=`${e.sets} × ${e.reps} Wdh. · ${fmtW(e.weight)}`; }
+      save(); };
     card.querySelector('[data-act=all]').onclick=()=>{ const en=getEn(); en.reps=Array(e.sets).fill(e.reps); save(); render(); };
     card.querySelector('[data-act=clear]').onclick=()=>{ delete d.entries[e.id]; save(); render(); };
     card.querySelector('[data-act=toggle]').onclick=()=>{ card.classList.remove('done'); card.querySelector('.illu').classList.toggle('hidden'); };
   });
   const fin=$('#finish'); if(fin) fin.onclick=finishWorkout;
+  $('#editSplit').onclick=()=>editSplit(day);
+}
+function editSplit(day){
+  const all=[...S.exercises].sort((a,b)=>a.name.localeCompare(b.name,'de'));
+  const h=`<h3>${esc(S.splitNames[day])}</h3><p class="note" style="margin:0 0 12px">Übungen an- oder abwählen. Verlauf und Gewichte bleiben erhalten.</p>
+    <div class="list">${all.map(e=>`<div class="item link" data-id="${e.id}"><div class="thumb">${ILLU.img(e.img,{labels:false})}</div>
+      <div class="grow"><div class="name" style="font-size:16px">${esc(e.name)}</div><div class="meta">${e.days.filter(d=>d!==day).length?'auch in '+esc(S.splitNames[e.days.find(d=>d!==day)]):''}</div></div>
+      <span class="check ${e.days.includes(day)?'on':''}">✓</span></div>`).join('')}</div>
+    <button class="btn primary" id="splitDone">Fertig</button>`;
+  sheet(h);
+  document.querySelectorAll('#sheetbg .item[data-id]').forEach(it=>it.onclick=()=>{
+    const e=S.exercises.find(x=>x.id===it.dataset.id); const c=it.querySelector('.check');
+    if(e.days.includes(day)){ e.days=e.days.filter(d=>d!==day); c.classList.remove('on'); }
+    else { e.days.push(day); c.classList.add('on'); }
+    save();
+  });
+  $('#splitDone').onclick=()=>{ closeSheet(); render(); };
 }
 function isEntered(e,d){ const en=d.entries[e.id]; return !!en && en.reps.some(r=>r!==''); }
 function softUpdate(card,e){
@@ -585,13 +607,13 @@ function undoFinish(){
 /* ---------- ÜBUNGEN ---------- */
 function renderExercises(){
   setHeader('Übungen',`${S.exercises.length} Übungen`);
-  const grp=day=>S.exercises.filter(e=>e.days.includes(day));
+  const tag=e=>e.days.length===2?`<span class="pill blue">beide</span>`:e.days.map(d=>`<span class="pill ${d==='A'?'blue':'orange'}">${esc(S.splitNames[d])}</span>`).join('');
   const item=e=>`<div class="item link" data-id="${e.id}"><div class="thumb">${ILLU.img(e.img,{labels:false})}</div>
-    <div class="grow"><div class="name" style="font-size:16px">${esc(e.name)}</div><div class="meta">${e.sets}×${e.reps} · ${fmtW(e.weight)} · +${String(e.inc).replace('.',',')} kg${e.days.length>1?' · A+B':''}</div></div><span class="chev">›</span></div>`;
-  let h=`<button class="btn primary" id="addEx" style="margin-top:10px">+ Übung hinzufügen</button>`;
-  for(const day of ['A','B']){
-    h+=`<h2 class="sec">${esc(S.splitNames[day])}</h2><div class="list">${grp(day).map(item).join('')||'<div class="item"><span class="meta">Keine Übungen</span></div>'}</div>`;
-  }
+    <div class="grow"><div class="name" style="font-size:16px">${esc(e.name)}</div><div class="meta">${e.sets}×${e.reps} · ${e.weight==null?'Körpergewicht':fmtW(e.weight)+' · +'+String(e.inc).replace('.',',')+' kg'}</div><div style="margin-top:3px;margin-left:-6px">${tag(e)}</div></div><span class="chev">›</span></div>`;
+  const all=[...S.exercises].sort((a,b)=>a.name.localeCompare(b.name,'de'));
+  let h=`<button class="btn primary" id="addEx" style="margin-top:10px">+ Übung hinzufügen</button>
+    <h2 class="sec">Alle Übungen</h2><div class="list">${all.map(item).join('')||'<div class="item"><span class="meta">Keine Übungen</span></div>'}</div>
+    <p class="note" style="margin:-8px 16px 14px">Welche Übung an welchem Tag dran ist, legst du in der Übung oder im Training unter „Übungen dieses Splits“ fest.</p>`;
   h+=`<h2 class="sec">Einstellungen</h2><div class="list form">
     <div class="item"><label>Name Split 1</label><input type="text" id="nA" value="${esc(S.splitNames.A)}"></div>
     <div class="item"><label>Name Split 2</label><input type="text" id="nB" value="${esc(S.splitNames.B)}"></div>
