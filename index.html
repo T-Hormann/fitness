@@ -127,6 +127,9 @@ h2.sec{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercas
 .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:50;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--bg);width:100%;max-width:640px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:8px 16px calc(24px + env(safe-area-inset-bottom))}
 .sheet .grab{width:36px;height:5px;border-radius:3px;background:rgba(118,118,128,.35);margin:6px auto 12px}
+.sheet{transition:transform .2s}
+.sheet-head{position:sticky;top:-8px;z-index:2;background:var(--bg);margin:-8px -16px 0;padding:8px 16px 0;touch-action:none}
+.sheet-close{position:absolute;right:14px;top:10px;width:30px;height:30px;border-radius:50%;background:rgba(118,118,128,.14);color:var(--muted);font-size:14px;font-weight:700}
 .sheet h3{margin:6px 0 12px;font-size:22px;font-weight:700}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom));background:var(--txt);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;font-weight:600;z-index:60;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1}
@@ -334,7 +337,7 @@ const ILLU = (() => {
 /* ==========================================================
    DATEN
    ========================================================== */
-const APP_VERSION='2.3.0';
+const APP_VERSION='2.4.0';
 const KEY='training.v1';
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const today=()=>new Date().toISOString().slice(0,10);
@@ -377,11 +380,16 @@ function save(){ S.updatedAt=Date.now(); saveLocal(); FB.push(); }
 function applyResult(ex, repsArr, weight, date, day){
   const success = repsArr.length>=ex.sets && repsArr.slice(0,ex.sets).every(r=>Number(r)>=ex.reps);
   const target=ex.reps;
+  const w = (weight==null||weight==='')?null:Number(weight);
   let increased=false, from=weight, to=weight, toReps=null;
+  // Der Zähler gehört zu einem bestimmten Gewicht/Ziel: anderes Gewicht (manuell geändert oder heute abweichend) → Zähler neu
+  const key = w==null ? 'r'+target : 'w'+w;
+  if(ex.streakKey!==key){ ex.streak=0; ex.streakKey=key; }
+  if(w!=null) ex.weight=w;   // tatsächlich benutztes Gewicht wird zum aktuellen Gewicht
   if(success){ ex.streak=(ex.streak||0)+1; } else { ex.streak=0; }
   if(success && ex.streak>=2){
-    if(weight!=null && weight!==''){ to=Math.round((Number(weight)+Number(ex.inc||0))*100)/100; ex.weight=to; increased=true; }
-    else { ex.reps=target+1; toReps=ex.reps; increased=true; }   // ohne Gewicht: eine Wiederholung mehr
+    if(w!=null){ to=Math.round((w+Number(ex.inc||0))*100)/100; ex.weight=to; increased=true; ex.streakKey='w'+to; }
+    else { ex.reps=target+1; toReps=ex.reps; increased=true; ex.streakKey='r'+ex.reps; }   // ohne Gewicht: eine Wiederholung mehr
     ex.streak=0;
   }
   ex.log.push({date,day,reps:repsArr.map(Number),weight:weight==null||weight===''?null:Number(weight),target,success,increased,to:(increased&&toReps==null)?to:null,toReps});
@@ -508,9 +516,15 @@ function softUpdate(card,e){
   const lg=view.querySelector('.legend span'); if(lg) lg.textContent=`${n} von ${list.length} Übungen eingetragen`;
   const fin=$('#finish'); if(fin) fin.disabled=!n;
 }
+let lastFinish=null;
 function finishWorkout(){
   const d=S.draft; if(!d) return;
+  const list=S.exercises.filter(e=>e.days.includes(d.day)); const n=list.filter(e=>isEntered(e,d)).length;
+  if(n<list.length && !confirm(`Nur ${n} von ${list.length} Übungen eingetragen. Trotzdem abschließen?`)) return;
+  // Sicherung für „Rückgängig“
+  lastFinish={draft:JSON.parse(JSON.stringify(d)), exercises:JSON.parse(JSON.stringify(S.exercises))};
   const results=[]; const sess={id:uid(),date:d.date,day:d.day,entries:[]};
+  lastFinish.sessId=sess.id;
   for(const e of S.exercises){
     if(!e.days.includes(d.day)) continue;
     const en=d.entries[e.id]; if(!en||!en.reps.some(r=>r!=='')) continue;
@@ -528,9 +542,18 @@ function finishWorkout(){
     else if(r.success) h+=` <span class="meta">(${r.e.streak}/2)</span>`;
     h+=`</li>`;
   }
-  h+=`</ul>${ups.length?`<p><b>Nächstes Mal mehr Gewicht bei:</b> ${ups.map(u=>esc(u.e.name)).join(', ')}</p>`:''}
-     <button class="btn primary" id="closeSheet">Fertig</button>`;
-  sheet(h); $('#closeSheet').onclick=()=>{closeSheet();render();};
+  h+=`</ul>${ups.length?`<p><b>Nächstes Mal mehr bei:</b> ${ups.map(u=>esc(u.e.name)).join(', ')}</p>`:''}
+     <button class="btn primary" id="closeSheet">Fertig</button>
+     <button class="btn gray" id="undoFinish" style="width:100%;margin-top:8px">Rückgängig – weiter trainieren</button>
+     <p class="note" style="text-align:center">Später änderbar unter Verlauf → Bearbeiten.</p>`;
+  sheet(h,{locked:true}); $('#closeSheet').onclick=()=>{closeSheet();render();};
+  $('#undoFinish').onclick=undoFinish;
+}
+function undoFinish(){
+  if(!lastFinish) return;
+  S.sessions=S.sessions.filter(x=>x.id!==lastFinish.sessId);
+  S.exercises=lastFinish.exercises; S.draft=lastFinish.draft; lastFinish=null;
+  save(); closeSheet(); tab='train'; render(); toast('Einheit zurückgenommen');
 }
 
 /* ---------- ÜBUNGEN ---------- */
@@ -595,8 +618,11 @@ function editExercise(ex){
     e.name=$('#fName').value.trim(); if(!e.name){ toast('Bitte Namen eingeben'); return; }
     e.sets=Math.max(1,parseInt($('#fSets').value)||3); e.reps=Math.max(1,parseInt($('#fReps').value)||10);
     e.weight=$('#fW').value===''?null:Number($('#fW').value); e.inc=Number($('#fInc').value)||0;
+    const key = e.weight==null ? 'r'+e.reps : 'w'+e.weight;
+    if(e.streakKey!==key){ e.streak=0; e.streakKey=key; }
     if(isNew) S.exercises.push(e); else { const i=S.exercises.findIndex(x=>x.id===e.id); S.exercises[i]=e; }
-    if(S.draft && S.draft.entries[e.id]) delete S.draft.entries[e.id];
+    // laufendes Training behalten; nur Satzanzahl angleichen
+    if(S.draft && S.draft.entries[e.id]){ const en=S.draft.entries[e.id]; while(en.reps.length<e.sets) en.reps.push(''); en.reps.length=e.sets; }
     save(); closeSheet(); render(); toast('Gespeichert');
   };
   const del=$('#fDel'); if(del) del.onclick=()=>{ if(confirm(`„${e.name}“ inkl. Verlauf löschen?`)){ S.exercises=S.exercises.filter(x=>x.id!==e.id); save(); closeSheet(); render(); } };
@@ -634,8 +660,10 @@ function renderHistory(){
 // Steigerungszähler aus dem Verlauf neu berechnen (Gewichte bleiben unangetastet)
 function recomputeStreak(e){
   e.log.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
-  let st=0; for(const l of e.log){ if(l.success){ st++; if(st>=2) st=0; } else st=0; }
-  e.streak=st;
+  let st=0, key=null;
+  for(const l of e.log){ const k=l.weight==null?'r'+(l.target??e.reps):'w'+l.weight; if(k!==key){ st=0; key=k; } if(l.success){ st++; if(st>=2){ st=0; key=null; } } else st=0; }
+  const cur = e.weight==null ? 'r'+e.reps : 'w'+e.weight;
+  e.streak = (key===cur) ? st : 0; e.streakKey=cur;
 }
 function editSession(s){
   if(!s) return;
@@ -669,7 +697,25 @@ function editSession(s){
 }
 
 /* ---------- SHEET ---------- */
-function sheet(html,opts={}){ closeSheet(); const bg=document.createElement('div'); bg.className='sheet-bg'; bg.id='sheetbg'; if(opts.locked) bg.dataset.locked='1'; bg.innerHTML=`<div class="sheet"><div class="grab"></div>${html}</div>`; bg.onclick=ev=>{ if(ev.target===bg && !opts.locked) closeSheet(); }; document.body.appendChild(bg); document.body.style.overflow='hidden'; }
+function sheet(html,opts={}){
+  closeSheet(); const bg=document.createElement('div'); bg.className='sheet-bg'; bg.id='sheetbg'; if(opts.locked) bg.dataset.locked='1';
+  bg.innerHTML=`<div class="sheet"><div class="sheet-head"><div class="grab"></div>${opts.locked?'':'<button class="sheet-close" aria-label="Schließen">✕</button>'}</div>${html}</div>`;
+  bg.onclick=ev=>{ if(ev.target===bg && !opts.locked) closeSheet(); };
+  const sh=bg.querySelector('.sheet'); const head=bg.querySelector('.sheet-head');
+  if(!opts.locked){
+    bg.querySelector('.sheet-close').onclick=closeSheet;
+    // Wischen nach unten am Griff / Kopf schließt das Sheet
+    let y0=null, dy=0;
+    head.addEventListener('touchstart',e=>{ y0=e.touches[0].clientY; dy=0; sh.style.transition='none'; },{passive:true});
+    head.addEventListener('touchmove',e=>{ if(y0==null) return; dy=Math.max(0,e.touches[0].clientY-y0); sh.style.transform=`translateY(${dy}px)`; },{passive:true});
+    head.addEventListener('touchend',()=>{ sh.style.transition=''; if(dy>90){ closeSheet(); } else { sh.style.transform=''; } y0=null; },{passive:true});
+    // Wischen im Inhalt, wenn ganz oben gescrollt
+    sh.addEventListener('touchstart',e=>{ if(sh.scrollTop<=0 && !e.target.closest('.sheet-head')){ y0=e.touches[0].clientY; dy=0; } },{passive:true});
+    sh.addEventListener('touchmove',e=>{ if(y0==null || sh.scrollTop>0) return; dy=Math.max(0,e.touches[0].clientY-y0); if(dy>0){ sh.style.transition='none'; sh.style.transform=`translateY(${dy}px)`; } },{passive:true});
+    sh.addEventListener('touchend',()=>{ if(y0==null) return; sh.style.transition=''; if(dy>120){ closeSheet(); } else { sh.style.transform=''; } y0=null; },{passive:true});
+  }
+  document.body.appendChild(bg); document.body.style.overflow='hidden';
+}
 function closeSheet(){ const b=$('#sheetbg'); if(b) b.remove(); document.body.style.overflow=''; }
 
 render();
