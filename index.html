@@ -365,7 +365,7 @@ const ILLU = (() => {
 /* ==========================================================
    DATEN
    ========================================================== */
-const APP_VERSION='2.7.0';
+const APP_VERSION='2.8.0';
 const KEY='training.v1';
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const today=()=>new Date().toISOString().slice(0,10);
@@ -414,8 +414,9 @@ function applyResult(ex, repsArr, weight, date, day){
   const key = w==null ? 'r'+target : 'w'+w;
   if(ex.streakKey!==key){ ex.streak=0; ex.streakKey=key; }
   if(w!=null) ex.weight=w;   // tatsächlich benutztes Gewicht wird zum aktuellen Gewicht
-  if(success){ ex.streak=(ex.streak||0)+1; } else { ex.streak=0; }
-  if(success && ex.streak>=2){
+  if(ex.noProg){ ex.streak=0; }
+  else if(success){ ex.streak=(ex.streak||0)+1; } else { ex.streak=0; }
+  if(!ex.noProg && success && ex.streak>=2){
     if(w!=null){ to=Math.round((w+Number(ex.inc||0))*100)/100; ex.weight=to; increased=true; ex.streakKey='w'+to; }
     else { ex.reps=target+1; toReps=ex.reps; increased=true; ex.streakKey='r'+ex.reps; }   // ohne Gewicht: eine Wiederholung mehr
     ex.streak=0;
@@ -516,7 +517,7 @@ function renderTrain(){
         <button class="btn sm gray" data-act="toggle">${entered?'Bearbeiten':'Bild ein/aus'}</button>
       </div>
       <div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap">${(()=>{const o=swapInfo(d,e); if(o) return `<span class="pill orange" style="margin:0">heute statt ${esc(o.name)}</span><button class="btn sm gray" data-act="unswap">Tausch aufheben</button>`; if((d.extra||[]).includes(e.id)) return `<span class="pill orange" style="margin:0">nur heute</span><button class="btn sm gray" data-act="unextra">Entfernen</button>`; return `<button class="btn sm gray" data-act="swap">Tauschen</button>`;})()}</div>
-      <div class="streak">Steigerung (${e.weight==null?'+1 Wdh.':'+'+String(e.inc).replace('.',',')+' kg'}): <i class="${(e.streak||0)>=1?'on':''}"></i><i class="${(e.streak||0)>=2?'on':''}"></i> <span>${e.streak||0}/2 Einheiten voll geschafft</span></div>
+      ${e.noProg?`<div class="streak">Ohne automatische Steigerung</div>`:`<div class="streak">Steigerung (${e.weight==null?'+1 Wdh.':'+'+String(e.inc).replace('.',',')+' kg'}): <i class="${(e.streak||0)>=1?'on':''}"></i><i class="${(e.streak||0)>=2?'on':''}"></i> <span>${e.streak||0}/2 Einheiten voll geschafft</span></div>`}
       <div class="illu ${entered?'hidden':''}">${ILLU.img(e.img)}</div>
       <div class="row" style="margin-top:6px"><span class="meta">Gewicht heute</span>
         <input type="number" inputmode="decimal" step="0.5" data-f="weight" value="${en.weight??''}" placeholder="–" style="width:80px;text-align:right;border:0;border-bottom:1px solid var(--line);background:transparent;font-size:17px;font-weight:600;outline:none"> <span class="meta">kg</span></div>
@@ -616,7 +617,7 @@ function finishWorkout(){
   for(const r of results){
     h+=`<li>${r.success?'✅':'◻️'} <b>${esc(r.e.name)}</b> ${r.reps.join('/')} @ ${fmtW(r.from)}`;
     if(r.increased) h+=` <span class="badge-up">→ ${r.toReps!=null?r.toReps+' Wdh.':fmtW(r.to)} 🎉</span>`;
-    else if(r.success) h+=` <span class="meta">(${r.e.streak}/2)</span>`;
+    else if(r.success && !r.e.noProg) h+=` <span class="meta">(${r.e.streak}/2)</span>`;
     h+=`</li>`;
   }
   h+=`</ul>${ups.length?`<p><b>Nächstes Mal mehr bei:</b> ${ups.map(u=>esc(u.e.name)).join(', ')}</p>`:''}
@@ -638,7 +639,7 @@ function renderExercises(){
   setHeader('Übungen',`${S.exercises.length} Übungen`);
   const tag=e=>!e.days.length?`<span class="pill">nicht zugeordnet</span>`:e.days.length===2?`<span class="pill blue">beide</span>`:e.days.map(d=>`<span class="pill ${d==='A'?'blue':'orange'}">${esc(S.splitNames[d])}</span>`).join('');
   const item=e=>`<div class="item link" data-id="${e.id}"><div class="thumb">${ILLU.img(e.img,{labels:false})}</div>
-    <div class="grow"><div class="name" style="font-size:16px">${esc(e.name)}</div><div class="meta">${e.sets}×${e.reps} · ${e.weight==null?'Körpergewicht':fmtW(e.weight)+' · +'+String(e.inc).replace('.',',')+' kg'}</div><div style="margin-top:3px;margin-left:-6px">${tag(e)}</div></div><span class="chev">›</span></div>`;
+    <div class="grow"><div class="name" style="font-size:16px">${esc(e.name)}</div><div class="meta">${e.sets}×${e.reps} · ${e.weight==null?'Körpergewicht':fmtW(e.weight)+(e.noProg?'':' · +'+String(e.inc).replace('.',',')+' kg')}${e.noProg?' · ohne Steigerung':''}</div><div style="margin-top:3px;margin-left:-6px">${tag(e)}</div></div><span class="chev">›</span></div>`;
   const all=[...S.exercises].sort((a,b)=>a.name.localeCompare(b.name,'de'));
   let h=`<button class="btn primary" id="addEx" style="margin-top:10px">+ Übung hinzufügen</button>
     <h2 class="sec">Alle Übungen</h2><div class="list">${all.map(item).join('')||'<div class="item"><span class="meta">Keine Übungen</span></div>'}</div>
@@ -676,6 +677,7 @@ function editExercise(ex){
       <div class="item"><label>Sätze</label><input type="number" inputmode="numeric" id="fSets" value="${e.sets}" min="1" max="10"></div>
       <div class="item"><label>Ziel-Wiederholungen</label><input type="number" inputmode="numeric" id="fReps" value="${e.reps}" min="1"></div>
       <div class="item"><label>Aktuelles Gewicht (kg)</label><input type="number" inputmode="decimal" step="0.5" id="fW" value="${e.weight??''}" placeholder="Körpergewicht"></div>
+      <div class="item"><label>Automatische Steigerung</label><button class="chip ${e.noProg?'':'on'}" id="fProg">${e.noProg?'Aus':'An'}</button></div>
       <div class="item"><label>Steigerung (kg)</label><input type="number" inputmode="decimal" step="0.5" id="fInc" value="${e.inc}"></div>
       <div class="hint">Die kleinste mögliche Erhöhung im Studio, z. B. 2 kg bei Kurzhanteln, 5 kg am Gerät. Ohne Gewicht (Körpergewicht, Feld leer lassen) wird stattdessen die Ziel-Wiederholungszahl um 1 erhöht.</div>
       <div class="item"><label>Bild</label><select id="fImg">${imgOptions}</select></div>
@@ -691,6 +693,7 @@ function editExercise(ex){
   $('#fName').oninput=ev=>{ e.name=ev.target.value; if(autoImg){ e.img=ILLU.match(e.name); sel.value=e.img; $('#prev').innerHTML=ILLU.img(e.img); hint(); } };
   sel.onchange=()=>{ e.img=sel.value; autoImg=false; $('#prev').innerHTML=ILLU.img(e.img); hint(); };
   document.querySelectorAll('.chip[data-day]').forEach(c=>c.onclick=()=>{ const d=c.dataset.day; if(e.days.includes(d)){ e.days=e.days.filter(x=>x!==d); } else e.days.push(d); c.classList.toggle('on',e.days.includes(d)); });
+  $('#fProg').onclick=()=>{ e.noProg=!e.noProg; $('#fProg').textContent=e.noProg?'Aus':'An'; $('#fProg').classList.toggle('on',!e.noProg); };
   $('#fSave').onclick=()=>{
     e.name=$('#fName').value.trim(); if(!e.name){ toast('Bitte Namen eingeben'); return; }
     e.sets=Math.max(1,parseInt($('#fSets').value)||3); e.reps=Math.max(1,parseInt($('#fReps').value)||10);
@@ -740,7 +743,7 @@ function recomputeStreak(e){
   let st=0, key=null;
   for(const l of e.log){ const k=l.weight==null?'r'+(l.target??e.reps):'w'+l.weight; if(k!==key){ st=0; key=k; } if(l.success){ st++; if(st>=2){ st=0; key=null; } } else st=0; }
   const cur = e.weight==null ? 'r'+e.reps : 'w'+e.weight;
-  e.streak = (key===cur) ? st : 0; e.streakKey=cur;
+  e.streak = (key===cur && !e.noProg) ? st : 0; e.streakKey=cur;
 }
 function editSession(s){
   if(!s) return;
