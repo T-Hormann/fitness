@@ -356,7 +356,7 @@ const ILLU = (() => {
   // Übungen mit generiertem Anatomie-Bild (img/<id>.jpg). Andere fallen auf die Strichzeichnung zurück.
   const PHOTOS = new Set(['split_squat','db_row','rdl','lat_pulldown','abduction','cable_rotation','goblet_squat','kneeling_row','single_leg_rdl','shoulder_press','side_bend','hyperextension','bench_press','leg_raise','barbell_squat','pass_to_place','reverse_fly','face_pull','db_bench_press','dips']);
   function img(id, opts={}){
-    if(PHOTOS.has(id)) return `<img src="img/${id}.jpg" alt="${(LIB[id]||{}).title||''}" loading="lazy">`;
+    if(PHOTOS.has(id)) return `<img src="img/${id}.jpg?v=${APP_VERSION}" alt="${(LIB[id]||{}).title||''}" loading="lazy">`;
     return svg(id, opts);
   }
   return {LIB, match, svg, img, PHOTOS};
@@ -365,7 +365,7 @@ const ILLU = (() => {
 /* ==========================================================
    DATEN
    ========================================================== */
-const APP_VERSION='2.6.0';
+const APP_VERSION='2.6.1';
 const KEY='training.v1';
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
 const today=()=>new Date().toISOString().slice(0,10);
